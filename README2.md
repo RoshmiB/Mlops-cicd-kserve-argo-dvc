@@ -121,16 +121,23 @@ It is an estimate of the total revenue a customer will generate over the entire 
 dvc init
 
 # Configure S3 remote
-dvc remote add -d myremote s3://roshmi20592767/churn_model/
+# -d is for default remote, if we dont specify a remote during push/pull dvc will use this
+# -f to forcely change remote
+dvc remote add myremote s3://roshmi20592767/churn_model/
+dvc remote add -d data_remote  s3://roshmi20592767/churn_data/
 
 # Track model with DVC
 dvc add models/churn_model.pkl
+dvc add data/Telco_customer_churn.xlsx 
 
 # Push to S3
 dvc push
+# dvc push models/churn_model.pkl.dvc -r myremote
+# dvc push data/Telco_customer_churn.xlsx  --remote  data_remote
 
 # Commit DVC metadata
-git add models/churn_model.pkl.dvc .dvc/ .gitignore
+add .dvc in .gitignore
+git add models/churn_model.pkl.dvc  .gitignore data/Telco_customer_churn.xlsx.dvc
 git commit -m "Track model with DVC"
 ```
 
