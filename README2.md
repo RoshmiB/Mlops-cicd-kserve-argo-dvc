@@ -143,6 +143,18 @@ git commit -m "Track model with DVC"
 
 ### 3. Push Model to S3
 
+Model should not be pushed to dvc, remove .dvc file from models folder
+DVC is used for versioning large files.
+With dvc a model promotion from dev to stg to prod can not be done
+
+```
+dvc remote remove myremote
+dvc remote list           
+data_remote     s3://roshmi20592767/churn_data/ (default)
+
+dvc pull :- to pull the files from remote
+```
+
 After training the model and setting up DVC:
 
 ```bash
@@ -155,19 +167,67 @@ export AWS_DEFAULT_REGION=us-east-1
 aws s3 mb s3://my-bucket
 
 # Push model to S3 using DVC
-dvc push
+aws s3 cp churn_model.pkl s3://roshmi20592767/churn_model/
+upload: ./churn_model.pkl to s3://roshmi20592767/churn_model/churn_model.pkl
 
 # Verify model is in S3
-aws s3 ls s3://my-bucket/churn-model/models/ --recursive
+aws s3 ls s3://roshmi20592767/churn_model/ --recursive
 ```
 
-The model will be stored in S3 at: `s3://my-bucket/churn-model/models/churn_model.pkl`
+The model will be stored in S3 at: `s3://roshmi20592767/churn_model/churn_model.pkl`
 
 ### 4. S3 Configuration
 
 **Note:** This section is already covered in Step 3. S3 is used by DVC to store models.
 
 ### 5. Kubernetes with KIND
+
+I used eks here :-
+
+```
+aws cloudformation delete-stack --stack-name eksctl-test-cluster-cluster --region us-west-2
+
+eksctl create cluster --name=test-cluster2 \
+                  --region=us-west-2 \
+                  --zones=us-west-2a,us-west-2b \
+                  --without-nodegroup \
+                  --version 1.36
+
+eksctl utils associate-iam-oidc-provider \
+--region us-west-2 \
+--cluster test-cluster2 \
+--approve
+
+eksctl update addon --name vpc-cni --cluster=test-cluster2
+
+eksctl create nodegroup --cluster=test-cluster2 \
+                    --region=us-west-2 \
+                    --name=test-cluster2-node \
+                    --node-type=t3.medium \
+                    --nodes-min=1 \
+                    --nodes-max=5 \
+                    --node-ami-family AmazonLinux2023 \
+                    --node-volume-size=20 \
+                    --spot \
+                    --managed \
+                    --asg-access \
+                    --external-dns-access \
+                    --full-ecr-access \
+                    --appmesh-access \
+                    --alb-ingress-access \
+                    --node-private-networking
+
+aws eks update-kubeconfig --region us-west-2 --name test-cluster2
+
+kubectl config current-context
+
+brew  install awscli
+(.venv) (base) rajaguru@MacBookPro:Mlops-cicd-kserve-argo-dvc/models ‹main*›$ ls -la /usr/local/bin/aws             
+lrwxr-xr-x  1 root  wheel  22 Dec 19  2021 /usr/local/bin/aws -> /usr/local/aws-cli/aws
+
+```
+
+![alt text](image-5.png)
 
 ```bash
 # Create KIND cluster
@@ -176,27 +236,178 @@ kind create cluster --name churn-model
 
 ### 6. KServe Setup
 
-```bash
 # Install KServe
-kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.11.0/kserve.yaml
+About Kserve :-
+
+https://github.com/RoshmiB/mlops-zero-to-hero/blob/main/08-kserve/01-Introduction.md
+
+What is KServe?
+KServe is a Kubernetes-native platform designed to deploy and serve ML models easily, reliably, and at scale.
+
+In even simpler words: KServe takes your ML model and turns it into a production-ready API running on Kubernetes without you writing a lot of server code.
+Why KServe Exists?
+Traditional model deployment is painful:
+
+You need to write Flask or FastAPI code
+You need to containerize the app
+You need to expose endpoints
+You need to manage scaling, logging, networking
+You need to monitor and version your models
+KServe removes most of this effort by providing standardized, ready-to-use model servers.
+
+What KServe Actually Does?
+KServe provides:
+
+Standard Model Servers
+For popular frameworks like:
+
+TensorFlow
+PyTorch
+Scikit-learn
+XGBoost
+ONNX
+You simply point KServe to your model file (a storage URI), and it deploys everything automatically.
+
+Automatic Scaling
+Your model API can:
+
+Scale up when traffic increases
+Scale down to zero when idle (saving huge costs)
+This is powered by Knative under the hood.
+
+
+Steps :-
+```bash
+# kubectl apply -f https://github.com/kserve/kserve/releases/download/v0.11.0/kserve.yaml
+
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+kubectl create namespace kserve
+
+helm install kserve-crd oci://ghcr.io/kserve/charts/kserve-crd \
+  --version v0.16.0 \
+  -n kserve \
+  --wait
+
+helm install kserve oci://ghcr.io/kserve/charts/kserve \
+  --version v0.16.0 \
+  -n kserve \
+  --set kserve.controller.deploymentMode=RawDeployment \
+  --wait
+
+k get pods -A | grep kserve
+kserve         kserve-controller-manager-88cdd4954-82xzl   2/2     Running   0          15m
+
+
+```
+
+
+By default s3 bucket is not public in organization, we can not directly put s3 url in 
+interference.yml , we need to create service account.
+The secret in service account will have the aws creds.
+
 
 # Create namespace, ServiceAccount and S3 secret for KServe
+k create ns ml             
+namespace/ml created
+
+# Create the IAM role for EKS IRSA + S3 access
+
+1. Confirm your EKS OIDC provider exists
+
+aws eks describe-cluster --name test-cluster2 --query "cluster.identity.oidc.issuer" --output text
+https://oidc.eks.us-west-2.amazonaws.com/id/067F276E5334D49B03B7B9E20CAFCA75
+
+2. Get the OIDC provider ARN and issuer host
+
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+REGION=us-west-2
+CLUSTER_NAME=test-cluster2
+
+OIDC_ISSUER=$(aws eks describe-cluster --name "$CLUSTER_NAME" --query "cluster.identity.oidc.issuer" --output text)
+OIDC_PROVIDER=${OIDC_ISSUER#https://}
+OIDC_PROVIDER_ARN="arn:aws:iam::$AWS_ACCOUNT_ID:oidc-provider/$OIDC_PROVIDER"
+
+echo "$OIDC_PROVIDER"
+oidc.eks.us-west-2.amazonaws.com/id/067F276E5334D49B03B7B9E20CAFCA75
+
+echo "$OIDC_PROVIDER_ARN"
+arn:aws:iam::725490567891:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/067F276E5334D49B03B7B9E20CAFCA75
+
+3. Create the trust policy JSON
+
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::725490567891:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/067F276E5334D49B03B7B9E20CAFCA75"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "oidc.eks.us-west-2.amazonaws.com/id/067F276E5334D49B03B7B9E20CAFCA75:sub": "system:serviceaccount:ml:sa-s3-access",
+          "oidc.eks.us-west-2.amazonaws.com/id/067F276E5334D49B03B7B9E20CAFCA75:aud": "sts.amazonaws.com"
+        }
+      }
+    }
+  ]
+}
+
+4. Create the IAM role
+aws iam create-role \
+  --role-name eks-ml-s3-access-role \
+  --assume-role-policy-document file://trust-policy.json
+
+5. Attach S3 permissions
+For read-only access:
+
+aws iam attach-role-policy \
+  --role-name eks-ml-s3-access-role \
+  --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+
+6. Annotate your Kubernetes ServiceAccount with role arn
+7. Apply the ServiceAccount
+
+
+
 # Update k8s/serviceaccount.yaml with your AWS credentials first
 kubectl apply -f k8s/serviceaccount.yaml
+k get sa -n ml             
+NAME           AGE
+default        10h
+sa-s3-access   106s
 
 # Deploy inference service
+keep s3 model bucket uri and change ns
 kubectl apply -f k8s/inference.yaml
 
 # Check inference service
+k get pods -n ml -w                
+NAME                                         READY   STATUS       RESTARTS     AGE
+churn-predictor-predictor-5d4586697d-nfmgj   0/1     Init:Error   1 (5s ago)   13s
 kubectl get inferenceservice -n churn-model
 
+![alt text](image-6.png)
+
+![alt text](image-7.png)
+
+![alt text](image-8.png)
+
+
 # Wait for it to be ready
+
 kubectl get inferenceservice churn-predictor -n churn-model -w
+
+
+
 ```
 
-**Important:** Before deploying, update `k8s/serviceaccount.yaml` with your actual AWS credentials.
+<!-- **Important:** Before deploying, update `k8s/serviceaccount.yaml` with your actual AWS credentials. -->
 
 ### 7. Test KServe Inference
+
+
 
 ```bash
 # Get the inference service URL
@@ -209,11 +420,32 @@ kubectl port-forward -n churn-model service/churn-predictor-predictor-default 80
 # Test prediction with curl
 # Note: sklearn models expect data as arrays, not named features
 # Order: age, tenure_months, monthly_charges, total_charges, num_support_calls
-curl -X POST http://localhost:8080/v1/models/churn-predictor:predict \
+curl -X POST http://localhost:6009/v1/models/churn-predictor:predict \
   -H "Content-Type: application/json" \
   -d '{
     "instances": [
-      [45, 24, 79.99, 1920.00, 3]
+      {
+      "gender": "Male",
+      "senior_citizen": "No",
+      "partner": "No",
+      "dependents": "No",
+      "tenure_months": 12,
+      "phone_service": "Yes",
+      "multiple_lines": "No",
+      "internet_service": "Fiber optic",
+      "online_security": "No",
+      "online_backup": "No",
+      "device_protection": "No",
+      "tech_support": "No",
+      "streaming_tv": "Yes",
+      "streaming_movies": "Yes",
+      "contract": "Month-to-month",
+      "paperless_billing": "Yes",
+      "payment_method": "Electronic check",
+      "monthly_charges": 89.95,
+      "total_charges": 1095.50,
+      "cltv": 1200.0
+    }
     ]
   }'
 ```
@@ -277,11 +509,28 @@ kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.pas
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{
-    "age": 45,
-    "tenure_months": 24,
-    "monthly_charges": 79.99,
-    "total_charges": 1920.00,
-    "num_support_calls": 3
+    {
+      "gender": "Male",
+      "senior_citizen": "No",
+      "partner": "No",
+      "dependents": "No",
+      "tenure_months": 12,
+      "phone_service": "Yes",
+      "multiple_lines": "No",
+      "internet_service": "Fiber optic",
+      "online_security": "No",
+      "online_backup": "No",
+      "device_protection": "No",
+      "tech_support": "No",
+      "streaming_tv": "Yes",
+      "streaming_movies": "Yes",
+      "contract": "Month-to-month",
+      "paperless_billing": "Yes",
+      "payment_method": "Electronic check",
+      "monthly_charges": 89.95,
+      "total_charges": 1095.50,
+      "cltv": 1200.0
+    }
   }'
 ```
 

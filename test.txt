@@ -1,0 +1,101 @@
+(.venv) (base) rajaguru@Roshmis-MacBook-Pro-2:Mlops-cicd-kserve-argo-dvc/DockerImage ‹main*›$ history | tail -100
+ 9518  OIDC_PROVIDER_ARN="arn:aws:iam::$AWS_ACCOUNT_ID:oidc-provider/$OIDC_PROVIDER"\n
+ 9519  echo "$OIDC_PROVIDER"\n
+ 9520  echo "$OIDC_PROVIDER_ARN"\n
+ 9521  aws iam create-role \\n  --role-name eks-ml-s3-access-role 
+ 9522  aws iam create-role \\n  --role-name eks-ml-s3-access-role \\n  --assume-role-policy-document file://trust-policy.json
+ 9523  aws iam create-role \\n  --role-name eks-ml-s3-access-role \\n  --assume-role-policy-document trust-policy.json
+ 9524  aws iam create-role \\n  --role-name eks-ml-s3-access-role \\n  --assume-role-policy-document file://trust-policy.json
+ 9525  cd ..
+ 9526  aws iam create-role \\n  --role-name eks-ml-s3-access-role \\n  --assume-role-policy-document file://trust-policy.json
+ 9527  kubectl apply -f k8s/serviceaccount.yaml\n
+ 9528  kubens
+ 9529  k get sa -n ml
+ 9530  k describe sa sa-s3-access
+ 9531  k describe sa sa-s3-access -n ml
+ 9532  kubectl apply -f k8s/inference.yaml
+ 9533  k get pods -n ml -w
+ 9534  k describe pod churn-predictor-predictor-5d4586697d-nfmgj -n ml
+ 9535  k get pod churn-predictor-predictor-5d4586697d-nfmgj -n ml -o yaml
+ 9536  k get svc -A
+ 9537  k get pods -n ml -w
+ 9538  kubectl delete -f k8s/inference.yaml
+ 9539  kubectl apply -f k8s/inference.yaml
+ 9540  k get pods -n ml -w
+ 9541  k logs churn-predictor-predictor-5d4586697d-rjjg6
+ 9542  k logs churn-predictor-predictor-5d4586697d-rjjg6 -n ml
+ 9543  k describe churn-predictor-predictor-5d4586697d-rjjg6 -n ml
+ 9544  k describe জদ্ churn-predictor-predictor-5d4586697d-rjjg6 -n ml
+ 9545  source /Users/rajaguru/Documents/interview_prep/Mlops-cicd-kserve-argo-dvc/.venv/bin/activate
+ 9546  k describe pod  churn-predictor-predictor-5d4586697d-rjjg6 -n ml
+ 9547  k logs churn-predictor-predictor-5d4586697d-rjjg6 -n ml
+ 9548  k get pod churn-predictor-predictor-5d4586697d-rjjg6 -n ml -o yaml
+ 9549  kubectl logs -n ml churn-predictor-predictor-5d4586697d-rjjg6 -c storage-initializer
+ 9550  kubectl get events -n ml --field-selector involvedObject.name=churn-predictor-predictor-5d4586697d-rjjg6 -o wide
+ 9551  kubectl run -n ml irsa-test --serviceaccount=sa-s3-access --restart=Never --image=amazonlinux -- sleep 3600\n
+ 9552  kubectl run -n ml irsa-test -sa=sa-s3-access --restart=Never --image=amazonlinux -- sleep 3600\n
+ 9553  kubectl run -n ml irsa-test --sa=sa-s3-access --restart=Never --image=amazonlinux -- sleep 3600\n
+ 9554  kubectl run irsa-test -n ml --restart=Never --image=amazonlinux \\n  --overrides='{"apiVersion":"v1","spec":{"serviceAccountName":"sa-s3-access"}}' \\n  -- sleep 3600
+ 9555  k get pods -n ml
+ 9556  k exec irsa-test  -n ml -it -- /bin/sh
+ 9557  k get pods -n ml
+ 9558  k get pod irsa-test -o yaml
+ 9559  k get pod irsa-test -o yaml -n ml
+ 9560  k exec irsa-test  -n ml -it -- /bin/sh
+ 9561  k logs churn-predictor-predictor-5d4586697d-rjjg6 -n ml
+ 9562  aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 725490567891.dkr.ecr.us-west-2.amazonaws.com
+ 9563  cd DockerImage
+ 9564  docker build -t 725490567891.dkr.ecr.us-west-2.amazonaws.com/kserver-image/kserve-sklearn-xgboost:latest .
+ 9565  docker login ghcr.io
+ 9566  docker build -t 725490567891.dkr.ecr.us-west-2.amazonaws.com/kserver-image/kserve-sklearn-xgboost:latest .
+ 9567  docker pull ghcr.io/kserve/sklearnserver:v0.16.0
+ 9568  docker build -t 725490567891.dkr.ecr.us-west-2.amazonaws.com/kserver-image/kserve-sklearn-xgboost:latest .
+ 9569  docker push 725490567891.dkr.ecr.us-west-2.amazonaws.com/kserver-image/kserve-sklearn-xgboost 
+ 9570  docker push 725490567891.dkr.ecr.us-west-2.amazonaws.com/kserver-image/kserve-sklearn-xgboost:latest
+ 9571  aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 725490567891.dkr.ecr.us-west-2.amazonaws.com
+ 9572  docker push 725490567891.dkr.ecr.us-west-2.amazonaws.com/kserver-image/kserve-sklearn-xgboost:latest
+ 9573  aws ecr create-repository \\n  --repository-name kserver-image/kserve-sklearn-xgboost \\n  --region us-west-2
+ 9574  docker push 725490567891.dkr.ecr.us-west-2.amazonaws.com/kserver-image/kserve-sklearn-xgboost:latest
+ 9575  cd ..
+ 9576  k delete k8s/inference.yaml
+ 9577  k apply ./ k8s/inference.yaml
+ 9578  k apply ./k8s/inference.yaml
+ 9579  k apply k8s/inference.yaml
+ 9580  kubectl delete -f k8s/inference.yaml
+ 9581  kubectl apply -f k8s/inference.yaml
+ 9582  k get -n ml -w
+ 9583  k get pod -n ml -w
+ 9584  k describe pod churn-predictor-predictor-76d8857458-bwj9z
+ 9585  k describe pod churn-predictor-predictor-76d8857458-bwj9z -n ml
+ 9586  k logs churn-predictor-predictor-76d8857458-bwj9z -n ml
+ 9587  k logs churn-predictor-predictor-76d8857458-bwj9z -n ml-c storage-initializer
+ 9588  k logs churn-predictor-predictor-76d8857458-bwj9z -n ml -c storage-initializer
+ 9589  k logs churn-predictor-predictor-76d8857458-bwj9z -n ml-c kserve-container
+ 9590  k logs churn-predictor-predictor-76d8857458-bwj9z -n ml -c kserve-container
+ 9591  cd DockerImage
+ 9592  docker buildx build --platform linux/amd64 -t 725490567891.dkr.ecr.us-west-2.amazonaws.com/kserver-image/kserve-sklearn-xgboost:latest --push .
+ 9593  history | tail -30
+ 9594  cd ~/Library/Application Support/Code/User/workspaceStorage/
+ 9595  cd ~/Library/"Application Support"/Code/User/workspaceStorage/
+ 9596  ls
+ 9597  grep -r "kserve"
+ 9598  ls
+ 9599  cd a6e62835b1812d69b01c41912d4b399d
+ 9600  ls
+ 9601* cd chatSessions
+ 9602* ls
+ 9603* cat f640f916-cdde-43cf-bf6f-7a7226438333.jsonl
+ 9604* cd ..
+ 9605* cat workspace.json
+ 9606* cd /Users/rajaguru/Library/Application Support/Code/User/workspaceStorage/a6e62835b1812d69b01c41912d4b399d/GitHub.copilot-chat/debug-logs/
+ 9607* cd /Users/rajaguru/Library/"Application Support"/Code/User/workspaceStorage/a6e62835b1812d69b01c41912d4b399d/GitHub.copilot-chat/debug-logs/
+ 9608* ls
+ 9609* cd 4b78e99a-e8ac-4c3f-b36b-9635ffb92d3b
+ 9610* ls
+ 9611* cat main.jsonl
+ 9612* cd ../57253477-fc27-4202-95a8-167cf1922df5
+ 9613* ls
+ 9614* cat models.json
+ 9615* cat main.jsonl
+ 9616  history | tail -30
+ 9617  history | tail -50

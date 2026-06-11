@@ -1,0 +1,16 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: churn-predictor
+  namespace: ml
+spec:
+  predictor:
+    serviceAccountName: sa-s3-access
+    sklearn:
+      storageUri: s3://roshmi20592767/churn_model/
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+      image: 725490567891.dkr.ecr.us-west-2.amazonaws.com/kserver-image/kserve-sklearn-xgboost:latest
+      imagePullPolicy: Always

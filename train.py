@@ -4,10 +4,13 @@ from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 from imblearn.over_sampling import SMOTE
 from xgboost import XGBClassifier
 from sklearn.metrics import classification_report, precision_score, recall_score, f1_score, accuracy_score, roc_auc_score
-import pickle
+# import pickle
+import joblib
 
 
 #ignore warnings
@@ -250,15 +253,35 @@ print(f"Accuracy: {accuracy:.4f}")
 print(f"AUC-ROC: {auc:.4f}")
 
 # Save model and preprocessing artifacts
-artifacts = {
-    'model': best_xgb_model,
-    'encoder': encoder,
-    'scaler': scaler,
-    'numerical_cols': numerical_cols,
-    'categorical_cols': categorical_cols,
-}
+# artifacts = {
+#     'model': best_xgb_model,
+#     'encoder': encoder,
+#     'scaler': scaler,
+#     'numerical_cols': numerical_cols,
+#     'categorical_cols': categorical_cols,
+# }
 
-with open('models/churn_model.pkl', 'wb') as f:
-    pickle.dump(artifacts, f)
+# with open('models/churn_model.pkl', 'wb') as f:
+#     pickle.dump(artifacts, f)
 
-print("Model artifacts saved to models/churn_model.pkl")
+# print("Model artifacts saved to models/churn_model.pkl")
+
+# Save only the trained model object with fitted preprocessing
+numeric_indices = [X_train.columns.get_loc(c) for c in numerical_cols]
+categorical_indices = [X_train.columns.get_loc(c) for c in categorical_cols]
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', StandardScaler(), numeric_indices),
+        ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False, drop='first'), categorical_indices),
+    ]
+)
+
+pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('classifier', best_xgb_model),
+])
+
+pipeline.fit(X_train, y_train)
+joblib.dump(pipeline, 'models/churn_model.pkl')
+print("Model pipeline saved to models/churn_model.pkl")

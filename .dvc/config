@@ -1,6 +1,4 @@
 [core]
     remote = data_remote
-['remote "myremote"']
-    url = s3://roshmi20592767/churn_model/
 ['remote "data_remote"']
     url = s3://roshmi20592767/churn_data/
