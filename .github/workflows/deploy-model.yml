@@ -1,0 +1,73 @@
+name: Deploy model to EKS KServe
+
+on:
+  push:
+    paths:
+      - 'train.py'
+      - 'DockerImage/**'
+      - 'k8s/inference.yaml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run training (produces models/churn_model.pkl)
+        run: |
+          python train.py
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Upload model to S3
+        run: |
+          aws s3 cp models/churn_model.pkl s3://${{ secrets.S3_BUCKET }}/churn_model/churn_model.pkl --acl bucket-owner-full-control
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: DockerImage
+          push: true
+          tags: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/${{ secrets.ECR_REPOSITORY }}:latest
+          platforms: linux/amd64
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Update kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }}
+
+      - name: Deploy InferenceService (delete & apply)
+        run: |
+          kubectl -n ${{ secrets.K8S_NAMESPACE }} delete -f k8s/inference.yaml --ignore-not-found=true
+          kubectl -n ${{ secrets.K8S_NAMESPACE }} apply -f k8s/inference.yaml
+
+      - name: Wait for KServe InferenceService
+        run: |
+          kubectl -n ${{ secrets.K8S_NAMESPACE }} get inferenceservice churn-predictor -o yaml
+          kubectl -n ${{ secrets.K8S_NAMESPACE }} get pods -l serving.kserve.io/inferenceservice=churn-predictor -o wide
