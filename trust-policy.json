@@ -1,18 +1,19 @@
 {
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Principal": {
-        "Federated": "arn:aws:iam::725490567891:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/067F276E5334D49B03B7B9E20CAFCA75"
-      },
-      "Action": "sts:AssumeRoleWithWebIdentity",
-      "Condition": {
-        "StringEquals": {
-          "oidc.eks.us-west-2.amazonaws.com/id/067F276E5334D49B03B7B9E20CAFCA75:sub": "system:serviceaccount:ml:sa-s3-access",
-          "oidc.eks.us-west-2.amazonaws.com/id/067F276E5334D49B03B7B9E20CAFCA75:aud": "sts.amazonaws.com"
-        }
-      }
-    }
-  ]
+ "Version": "2012-10-17",
+ "Statement": [
+     {
+         "Sid": "AllowEKSProvider",
+         "Effect": "Allow",
+         "Principal": {
+             "Federated": "arn:aws:iam::725490567891:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/9C88E7A274ED7FFD2219F53CB558F1B6"
+         },
+         "Action": "sts:AssumeRoleWithWebIdentity",
+         "Condition": {
+             "StringEquals": {
+                 "oidc.eks.us-west-2.amazonaws.com/id/9C88E7A274ED7FFD2219F53CB558F1B6:sub": "system:serviceaccount:mlflow:mlflow",
+                 "oidc.eks.us-west-2.amazonaws.com/id/9C88E7A274ED7FFD2219F53CB558F1B6:aud": "sts.amazonaws.com"
+             }
+         }
+     }
+ ]
 }

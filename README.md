@@ -1,79 +1,286 @@
-# MLOps CI/CD KServe Argo DVC
+ML_Flow setup :- 
 
-## Overview
+Guide :- https://community-charts.github.io/docs/charts/mlflow/usage
+Doc:- https://www.mlflow.org/docs/latest/ml/model-registry/
 
-This project is a small ML workflow repository for practicing MLOps concepts such as CI/CD, model training, deployment, and reproducible data pipelines.
+1. Setup Postgres db in aws
+2. modify settings to make the db publickly accessible  :-
+![alt text](image.png)
 
-## Project Files
+![alt text](image-1.png)
 
-| File | Purpose |
-| --- | --- |
-| `train.py` | Trains the model and generates artifacts |
-| `api.py` | Exposes the trained model as an API |
-| `requirements.txt` | Python dependencies |
-| `data/` | Input dataset and related artifacts |
-| `README.md` | Project documentation |
+![alt text](image-2.png)
 
-## Quick Start
+3. connect via dBeaver client and create a mlflow database
 
-| Step | Command |
-| --- | --- |
-| Create a virtual environment | `python3 -m venv .venv` |
-| Activate the environment | `source .venv/bin/activate` |
-| Install dependencies | `pip install -r requirements.txt` |
-| Run training | `python3 train.py` |
-1> to deactivate :- conda deactivate or deactivate
-2> 
+nc -zv database-1.c1kk8ec46sxh.us-west-2.rds.amazonaws.com 5432                                                       
+Connection to database-1.c1kk8ec46sxh.us-west-2.rds.amazonaws.com port 5432 [tcp/postgresql] succeeded!
+
+![alt text](image-3.png)
+
+![alt text](image-4.png)
+
+![alt text](image-5.png)
+
+4. DB endpoint :- database-1.c1kk8ec46sxh.us-west-2.rds.amazonaws.com , port:- 5432
+
+5. Create eks cluster
+   
+
+6. Create service account with rds ans s3 access :-
+
+```
+i) aws eks describe-cluster --name test-cluster2 --query "cluster.identity.oidc.issuer" --output text
+
+https://oidc.eks.us-west-2.amazonaws.com/id/9C88E7A274ED7FFD2219F53CB558F1B6
+
+ii) Create the trust policy JSON
+
+aws iam create-role --role-name eks-mlflow-s3-rds-access-role --assume-role-policy-document file://trust-policy.json    
 
 
-# Notes
+{
+ "Version": "2012-10-17",
+ "Statement": [
+     {
+         "Sid": "AllowEKSProvider",
+         "Effect": "Allow",
+         "Principal": {
+             "Federated": "arn:aws:iam::725490567891:oidc-provider/oidc.eks.us-west-2.amazonaws.com/id/9C88E7A274ED7FFD2219F53CB558F1B6"
+         },
+         "Action": "sts:AssumeRoleWithWebIdentity",
+         "Condition": {
+             "StringEquals": {
+                 "oidc.eks.us-west-2.amazonaws.com/id/9C88E7A274ED7FFD2219F53CB558F1B6:sub": "system:serviceaccount:mlflow:sa-s3-rds-access",
+                 "oidc.eks.us-west-2.amazonaws.com/id/9C88E7A274ED7FFD2219F53CB558F1B6:aud": "sts.amazonaws.com"
+             }
+         }
+     }
+ ]
+}
 
-- Use `fit_transform()` only on training data.
-- Use `transform()` on validation, test, or production data.
-- Keep the workflow reproducible by pinning dependencies in `requirements.txt`.
+iii) Attach the permission policy :-
 
-## Training and Inference Flow
+{
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::mlflow-725490567891"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:DeleteObject"
+            ],
+            "Resource": [
+                "arn:aws:s3:::mlflow-725490567891/*"
+            ]
+        },
+        {
+            "Action": [
+                "rds-db:connect"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+                "arn:aws:rds:us-west-2:725490567891:db:database-1"
+            ]
+        }
+    ],
+    "Version": "2012-10-17"
+}
 
-1. Prepare the dataset in `data/`
-2. Run `python3 train.py`
-3. Use `api.py` for serving the model
+iv) create ns mlflow :-
+   k create ns mlflow
 
-## `fit_transform()` vs `transform()`
+v) apply service account :-
+   k apply -f k8s/serviceaccount.yaml
 
-| Method | What it does | Use on | Why |
-| --- | --- | --- | --- |
-| `fit_transform()` | Learns parameters and transforms the data in one step | Training data | Establishes the rules from training data only |
-| `transform()` | Applies previously learned parameters without refitting | Test data or new data | Prevents data leakage and keeps evaluation realistic |
+vi) create s3 bucket with versioning enabled
 
-Why Misusing Them Causes Data Leakage
-Imagine you are scaling test scores between 0 and 100 using a Min-Max Scaler.
-Your Training Set has scores ranging from 50 to 90.
-Your Test Set has scores ranging from 60 to 100.
-The Correct Approach (Using transform on Test)You run scaler.fit_transform(X_train). 
-The scaler learns that the training minimum is 50 and the maximum is 90. It scales the training data based on those boundaries.You run scaler.transform(X_test). The scaler uses the training rules (Min=50, Max=90). A test score of 100 will scale to a value above 1.0. This is correct because, in the real world, your model wouldn't know a score of 100 was possible yet.
-The Wrong Approach (Using fit_transform on Test)If you accidentally run scaler.fit_transform(X_test), the scaler wipes its memory of the training data. It recalculates a new minimum (60) and maximum (100) based on the test set.This introduces Data Leakage. Your test data predictions are now biased by information the model should not know, leading to overly optimistic test scores that will fail in production.
+vii) instal mlflow :-
 
-## Data Leakage Example
+helm repo add community-charts https://community-charts.github.io/helm-charts
 
-| Scenario | Outcome |
-| --- | --- |
-| `scaler.fit_transform(X_train)` followed by `scaler.transform(X_test)` | Correct and safe |
-| `scaler.fit_transform(X_test)` | Incorrect because it leaks test-set information into preprocessing |
+helm install mlflow community-charts/mlflow \
+  --namespace mlflow \
+  --set backendStore.databaseMigration=true \
+  --set backendStore.postgres.enabled=true \
+  --set backendStore.postgres.host=database-1.c1kk8ec46sxh.us-west-2.rds.amazonaws.com \
+  --set backendStore.postgres.database=mlflow \
+  --set backendStore.postgres.user=postgres \
+  --set backendStore.postgres.password=<pass> \
+  --set artifactRoot.s3.enabled=true \
+  --set artifactRoot.s3.bucket=mlflow-725490567891 \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=sa-s3-rds-access \
+  --set extraEnvVars.AWS_DEFAULT_REGION=us-west-2
 
-## Recommended Python Example
+>.   
+NAME: mlflow
+LAST DEPLOYED: Thu Jun 25 15:53:25 2026
+NAMESPACE: mlflow
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+1. Get the application URL by running these commands:
+  export POD_NAME=$(kubectl get pods --namespace mlflow -l "app.kubernetes.io/name=mlflow,app.kubernetes.io/instance=mlflow" -o jsonpath="{.items[0].metadata.name}")
+  export CONTAINER_PORT=$(kubectl get pod --namespace mlflow $POD_NAME -o jsonpath="{.spec.containers[0].ports[0].containerPort}")
+  echo "Visit http://127.0.0.1:$CONTAINER_PORT to use your application"
+  kubectl --namespace mlflow port-forward $POD_NAME $CONTAINER_PORT:$CONTAINER_PORT
 
-```python
-from sklearn.preprocessing import StandardScaler
-scaler = StandardScaler()
-# Fit on training data
-X_train_scaled = scaler.fit_transform(X_train)
-# Apply the learned scaling to test data
-X_test_scaled = scaler.transform(X_test)
+viii) check logs :-
+
+> kubectl logs deployment/mlflow -n mlflow
+Defaulted container "mlflow" out of: mlflow, mlflow-db-migration (init)
+Registry store URI not provided. Using backend store URI.
+[MLflow] Security middleware enabled with default settings (localhost-only). To allow connections from other hosts, use --host 0.0.0.0 and configure --allowed-hosts and --cors-allowed-origins.
+/opt/venv/lib/python3.13/site-packages/mlflow/server/fastapi_app.py:17: StarletteDeprecationWarning: starlette.middleware.wsgi is deprecated and will be removed in a future release. Please refer to https://github.com/abersheeran/a2wsgi as a replacement.
+  from starlette.middleware.wsgi import WSGIResponder, build_environ
+2026/06/25 10:24:06 INFO:     Uvicorn running on http://0.0.0.0:5000 (Press CTRL+C to quit)
+
+> helm get values mlflow -n mlflow
+
+USER-SUPPLIED VALUES:
+artifactRoot:
+  s3:
+    bucket: mlflow-725490567891
+    enabled: true
+backendStore:
+  databaseMigration: true
+  postgres:
+    database: mlflow
+    enabled: true
+    host: database-1.c1kk8ec46sxh.us-west-2.rds.amazonaws.com
+    password: <pass>
+    user: postgres
+extraEnvVars:
+  AWS_DEFAULT_REGION: us-west-2
+serviceAccount:
+  create: false
+  name: sa-s3-rds-access
+
+> kubectl exec -it deployment/mlflow -n mlflow -c mlflow -- env   
+
+
+PATH=/opt/venv/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+HOSTNAME=mlflow-7ffb888774-9sgtt
+GPG_KEY=7169605F62C751356D054A26A821E680E5FA6305
+PYTHON_VERSION=3.13.14
+PYTHON_SHA256=639e43243c620a308f968213df9e00f2f8f62332f7adbaa7a7eeb9783057c690
+PYTHONUNBUFFERED=1
+PGPASSWORD=<pass>
+MLFLOW_VERSION=3.14.0
+MLFLOW_CONFIGURE_LOGGING=true
+MLFLOW_DISABLE_TELEMETRY=true
+MLFLOW_LOGGING_LEVEL=INFO
+PGHOST=database-1.c1kk8ec46sxh.us-west-2.rds.amazonaws.com
+PGPORT=5432
+DO_NOT_TRACK=true
+PGUSER=postgres
+MLFLOW_FLASK_SERVER_SECRET_KEY=ba6338735c0079c4231c8d2053c1b17c
+PGDATABASE=mlflow
+MLFLOW_SERVICE_PORT=80
+MLFLOW_SERVICE_PORT_HTTP=80
+MLFLOW_PORT=tcp://10.100.41.223:80
+KUBERNETES_SERVICE_PORT=443
+KUBERNETES_SERVICE_PORT_HTTPS=443
+KUBERNETES_PORT_443_TCP_ADDR=10.100.0.1
+MLFLOW_PORT_80_TCP=tcp://10.100.41.223:80
+KUBERNETES_SERVICE_HOST=10.100.0.1
+MLFLOW_SERVICE_HOST=10.100.41.223
+KUBERNETES_PORT_443_TCP_PORT=443
+MLFLOW_PORT_80_TCP_PROTO=tcp
+MLFLOW_PORT_80_TCP_PORT=80
+MLFLOW_PORT_80_TCP_ADDR=10.100.41.223
+KUBERNETES_PORT=tcp://10.100.0.1:443
+KUBERNETES_PORT_443_TCP=tcp://10.100.0.1:443
+KUBERNETES_PORT_443_TCP_PROTO=tcp
+TERM=xterm
+HOME=/home/mlflow
+
+
+> k port-forward pod/mlflow-7ffb888774-9sgtt 7004:5000 -n mlflow
+
+> k describe pod mlflow-7ffb888774-9sgtt
+
+Name:             mlflow-7ffb888774-9sgtt
+Namespace:        mlflow
+Priority:         0
+Service Account:  mlflow
+Init Containers:
+  mlflow-db-migration:
+    Container ID:  containerd://a99d596343c2cc5a6ffffdd067faac6b0aadc89df636aa9b7e1af3053aeab38e
+    Image:         burakince/mlflow:3.14.0
+    Image ID:      docker.io/burakince/mlflow@sha256:d66a486309adb1fd84fd4d1d6b11c1ecc90632e04372205b92bbc15d2196f418
+    Port:          <none>
+    Host Port:     <none>
+    Command:
+      python
+    Args:
+      /opt/mlflow/migrations.py
+    State:          Terminated
+      Reason:       Completed
+      Exit Code:    0
+      Started:      Thu, 25 Jun 2026 15:53:50 +0530
+      Finished:     Thu, 25 Jun 2026 15:53:55 +0530
+
 ```
 
-## One hot Encoding
-handle_unknown='ignore': 
-If your X_test set contains a category that wasn't present in X_train (e.g., a new country or a rare sentiment word), this setting prevents your code from crashing. It will safely assign all zeros to that unknown category.
-sparse_output=False: 
-By default, OneHotEncoder returns a compressed sparse matrix to save memory. Setting this to False returns a standard NumPy array, making it easy to convert back into a readable Pandas DataFrame.
+7. python3 -m venv .venv
+   source .venv/bin/activate
+   pip3 install mlflow
+   pip install -r  requirements.txt
+
+8. convert train.py to include mlflow steps
+
+9. python train3_mlflow.py \
+--csv data/loans.csv \
+--experiment loan-defaulter-prediction \
+--run xgb-v1
+
+
+
+
+Other way to install mlfow :-
+
+Option 3: Use a values.yaml (best for production)
+
+Create values.yaml:
+
+backendStore:
+  databaseMigration: true
+
+  postgres:
+    enabled: true
+    host: database-1.c1kk8ec46sxh.us-west-2.rds.amazonaws.com
+    database: mlflow
+    user: postgres
+    password: <pass>
+
+artifactRoot:
+  s3:
+    enabled: true
+    bucket: mlflow-725490567891
+
+serviceAccount:
+  create: false
+  name: sa-s3-rds-access
+
+extraEnvVars:
+  - name: AWS_DEFAULT_REGION
+    value: us-west-2
+
+Then:
+
+helm upgrade mlflow community-charts/mlflow \
+  -n mlflow \
+  -f values.yaml
 

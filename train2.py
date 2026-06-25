@@ -1,16 +1,35 @@
-from imblearn.pipeline import Pipeline
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import warnings
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    classification_report,
+    confusion_matrix
+)
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, StratifiedKFold, train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import MinMaxScaler
 from imblearn.over_sampling import SMOTE
 from xgboost import XGBClassifier
+from imblearn.pipeline import Pipeline
+from catboost import CatBoostClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    classification_report,
+    confusion_matrix
+)
 
 
 warnings.filterwarnings('ignore')
@@ -24,8 +43,7 @@ pd.set_option('display.max_columns', None)
 print (df.head())
 
 print (df.info()) # emp_length and revol_util have null values
-print (df.describe().T) # dti 0 means no debt, max 30 means 30% of income is used to pay debt, revol_util max 100 means 100% of credit line is used, min 0 means no credit line is used, outliers are present in loan_amnt and annual_inc columns
-print (df.isnull().sum()) # emp_length has 1036 and revol_util has 50 null values
+print (df.describe().T) 
 print (df.shape) # 38770 rows and 23 columns
 
 print (df['emp_length'].value_counts())
@@ -37,11 +55,12 @@ print (df['delinq_2yrs'].value_counts())
 # Data loading and pre-processing
 #**********************************************
 
-# Droping the columns which are not required for the model training
-# id and member_id are unique identifiers and do not provide any predictive value for the model.
-# delinq_2yrs and pub_rec are has 90% of the values as 0, so they are not useful for the model training.
-# grade is a categorical variable and is already represented by the sub_grade variable, so it can be dropped.
-# last_pymnt_amnt  installment are not useful for the model training as they are related to the loan repayment and are not known at the time of loan application.
+df['revol_bal_to_income'] = \
+df['revol_bal']/df['annual_inc']
+
+df['inq_to_acc_ratio']=\
+df['inq_last_6mths']/(df['open_acc']+1)
+
 df.drop(['id', 'member_id','delinq_2yrs','pub_rec','grade','last_pymnt_amnt', 'installment'], axis=1, inplace=True)
 
 # drop the rows with null values in  revol_util columns
@@ -122,7 +141,7 @@ print(df['loan_status'].value_counts())
 # # no of outlines removed
 # print(f'Number of outliers removed: {df.shape[0] - df_clean.shape[0]}')
 
-df_clean = df.copy() 
+df_clean = df.copy()
 
 skewed_cols = [
     'annual_inc',
@@ -141,16 +160,6 @@ print (df_clean.head())
 #**********************************************
 # EDA (Exploratory Data Analysis)
 #**********************************************
-
-df_clean['revol_bal_to_income'] = \
-df_clean['revol_bal']/df_clean['annual_inc']
-
-df_clean['inq_to_acc_ratio']=\
-df_clean['inq_last_6mths']/(df_clean['open_acc']+1)
-
-# create a new feature 'loan_to_income_ratio' by dividing 'loan_amnt' by 'annual_inc' to see if it has any relationship with the target variable
-df_clean['loan_to_income_ratio'] = df_clean['loan_amnt'] / df_clean ['annual_inc'] + 1e-6 # add a small value to avoid division by zero
-
 
 # create a correlation heatmap to visualize the relationships between the features
 plt.figure(figsize=(12, 10))
@@ -177,6 +186,8 @@ sns.kdeplot(ax=axes[1],data=df_clean, x='dti', hue='loan_status', common_norm=Fa
 axes[1].set_title('Distribution of Debt-to-Income Ratio by Loan Status')
 plt.show()
 
+# create a new feature 'loan_to_income_ratio' by dividing 'loan_amnt' by 'annual_inc' to see if it has any relationship with the target variable
+df_clean['loan_to_income_ratio'] = df_clean['loan_amnt'] / df_clean ['annual_inc'] + 1e-6 # add a small value to avoid division by zero
 
 fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 sns.boxplot(ax=axes[0], x='loan_status', y='loan_to_income_ratio', data=df_clean, palette='pastel')
@@ -187,23 +198,31 @@ axes[1].set_title('Distribution of Loan-to-Income Ratio by Loan Status')
 plt.show()
 
 print(df_clean.head())
-# df_clean.drop(['annual_inc'], axis=1, inplace=True) # drop annual_inc column as it is used to create loan_to_income_ratio feature
+
+df_clean['revol_per_account']=\
+df_clean['revol_bal']/(df_clean['open_acc']+1)
+
+df_clean['interest_burden']=\
+df_clean['loan_amnt']*df_clean['int_rate']/(df_clean['annual_inc']+1)
+
+df_clean['dti_interest']=\
+df_clean['dti']*df_clean['int_rate']
+
 
 # #**********************************************
 # 4. MODEL SELECTION
 #**********************************************
 
+print(df_clean.columns.tolist())
+
+
+
 X = df_clean.drop(['loan_status'], axis=1)
-y = df_clean['loan_status']
+y=df_clean['loan_status']
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
 
-# Fit scaler exclusively on the training set to eliminate information leakage, normalize the numerical columns using MinMaxScaler
-# numerical_cols = list(X.columns)
-# scaler = MinMaxScaler()
-# X_train[numerical_cols] = scaler.fit_transform(X_train[numerical_cols])
-# X_test[numerical_cols] = scaler.transform(X_test[numerical_cols])
 
 
 # handle class imbalance using SMOTE (Synthetic Minority Over-sampling Technique) to generate synthetic samples for the minority class in the training set
@@ -212,41 +231,21 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 # print(f"Original training shape: {y_train.value_counts()}")
 # print(f"Balanced training shape: {y_train_balanced.value_counts()}")
 
-# num_safe = np.sum(y_train == 0)
-# num_defaults = np.sum(y_train == 1)
-# imbalance_ratio = num_safe / num_defaults
 
-# print(f"\nCalculated Imbalance Ratio: {imbalance_ratio:.2f}")
-# print("Every missed default will now be penalized 6x more than a false alarm.")
-
-
-# Initialize baseline model evaluation
+# # Initialize baseline model evaluation
 # xgb_model = XGBClassifier(
 #     random_state=42, 
 #     scale_pos_weight=1, 
-#     eval_metric='auc',
-#     tree_method='hist'
+#     eval_metric='logloss',
+
 # )
-
-# xgb_model.fit(X_train_balanced, y_train_balanced)
-# print("\nBaseline Model Selected and Trained.")
-
-# # FIX: Instead of raw .predict(), capture default probability matrix
-# # Assuming '0' represents the default class from your previous print statement
-# y_probs = baseline_model.predict_proba(X_test)
-# y_prob_default = y_probs[:, 0] 
-
-# # FIX: Set strategic risk-averse cutoff to 30% for defaults
-# custom_threshold = 0.30
-# y_pred_adjusted = np.where(y_prob_default > custom_threshold, 0, 1)
-
 
 pipeline = Pipeline([
 
 ('smote',
 
 SMOTE(
-sampling_strategy=0.45,
+sampling_strategy=0.5,
 random_state=42
 )),
 
@@ -260,32 +259,14 @@ tree_method='hist'
 
 ])
 
+
+# xgb_model.fit(X_train_balanced, y_train_balanced)
+# print("\nBaseline Model Selected and Trained.")
+
+
 #**********************************************
 # 5. HPP TUNING (HYPERPARAMETER TUNING)
 #**********************************************
-
-# param_grid = {
-#     'n_estimators': [100, 200, 300],
-#     'max_depth': [2, 3, 4, 5],               # Lower depths prevent overfitting to noise
-#     'learning_rate': [0.01, 0.05, 0.1],
-#     'subsample': [0.7, 0.8, 0.9],
-#     'colsample_bytree':[0.7,0.8,1],
-#     'min_child_weight':[1,3,5]
-# }
-
-# cv_strategy = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-
-# print("\nStarting Cost-Sensitive XGBoost Tuning via RandomizedSearchCV...")
-# random_search = RandomizedSearchCV(
-#     estimator=xgb_model, 
-#     param_distributions=param_grid, 
-#     cv=cv_strategy, 
-#     scoring='roc_auc', 
-#     n_iter=30,
-#     n_jobs=-1, 
-#     random_state=42
-# )
-
 
 param_grid = {
     'xgb__max_depth': [2, 3, 4, 5],
@@ -315,21 +296,37 @@ random_search = RandomizedSearchCV(
 random_search.fit(X_train, y_train)
 best_xgb = random_search.best_estimator_
 
-
-
-# Fit directly on the original clean training sets
-# random_search.fit(X_train_balanced, y_train_balanced)
-# best_xgb = random_search.best_estimator_
-
 print(f"Best Parameters Found: {random_search.best_params_}")
 
+importance = pd.DataFrame({
 
-# print("\nStarting Hyperparameter Tuning via RandomizedSearchCV...")
-# random_search = RandomizedSearchCV(estimator=baseline_model, param_distributions=param_grid, cv=3, scoring='recall', n_jobs=-1, n_iter=10)
-# random_search.fit(X_train_balanced, y_train_balanced)
+'Feature':X_train.columns,
 
-# best_model = random_search.best_estimator_
-# print(f"Best Parameters Found: {random_search.best_params_}")
+'Importance':
+
+best_xgb.named_steps['xgb']
+
+.feature_importances_
+
+})
+
+
+print(
+
+importance
+
+.sort_values(
+
+'Importance',
+
+ascending=False
+
+)
+
+.head(20)
+
+)
+
 
 #**********************************************
 # 6. MODEL EVALUATION
@@ -339,34 +336,366 @@ y_prob_default = best_xgb.predict_proba(X_test)[:, 1]
 
 # Apply a conservative operational threshold
 # If chance of default > 15%, classify as Default (1)
-custom_threshold = 0.25
-y_pred_adjusted = np.where(y_prob_default > custom_threshold, 1, 0)
-
-print("\n=== Optimized Confusion Matrix ===")
-# Structure: [[True Safe, False Default], [False Safe, True Default]]
-print(confusion_matrix(y_test, y_pred_adjusted))
-
-print("\n=== Optimized Classification Report ===")
-print(classification_report(y_test, y_pred_adjusted, target_names=['Safe (0)', 'Default (1)']))
-
-print("\n=== ROC-AUC Score ===")
-print(f"{roc_auc_score(y_test, y_prob_default):.4f}")
 
 
-# y_pred = best_model.predict(X_test)
-# y_pred_proba = best_model.predict_proba(X_test)[:, 1]
 
-# print("\n=== Confusion Matrix ===")
-# print(confusion_matrix(y_test, y_pred))
+thresholds=[
 
-# print("\n=== Classification Report ===")
-# print(classification_report(y_test, y_pred))
+0.15,
+
+0.2,
+
+0.25,
+
+0.3,
+
+0.35,
+
+0.4
+
+]
+
+
+for t in thresholds:
+
+    y_pred=(
+
+        y_prob_default>t
+
+    ).astype(int)
+
+
+    print(
+
+    f"\nThreshold={t}"
+
+    )
+
+
+    print(
+
+    confusion_matrix(
+
+    y_test,
+
+    y_pred
+
+    )
+
+    )
+
+
+    print(
+
+    classification_report(
+
+    y_test,
+
+    y_pred,
+
+    target_names=
+
+    [
+
+    'Safe',
+
+    'Default'
+
+    ]
+
+    )
+
+    )
+
+
+from sklearn.metrics import roc_curve
+
+
+fpr,tpr,_=roc_curve(
+
+y_test,
+
+y_prob_default
+
+)
+
+
+plt.figure(figsize=(8,6))
+
+plt.plot(
+
+fpr,
+
+tpr
+
+)
+
+plt.plot(
+
+[0,1],
+
+[0,1],
+
+'--'
+
+)
+
+plt.xlabel("False Positive Rate")
+
+plt.ylabel("True Positive Rate")
+
+plt.title("ROC Curve")
+
+plt.show()
+
+# custom_threshold = 0.3
+# y_pred_adjusted = np.where(y_prob_default > custom_threshold, 1, 0)
+
+# print("\n=== Optimized Confusion Matrix ===")
+# # Structure: [[True Safe, False Default], [False Safe, True Default]]
+# print(confusion_matrix(y_test, y_pred_adjusted))
+
+# print("\n=== Optimized Classification Report ===")
+# print(classification_report(y_test, y_pred_adjusted, target_names=['Safe (0)', 'Default (1)']))
 
 # print("\n=== ROC-AUC Score ===")
-# print(f"{roc_auc_score(y_test, y_pred_proba):.4f}")
+# print(f"{roc_auc_score(y_test, y_prob_default):.4f}")
 
 
-# # for 'purpose', we will do one-hot encoding and drop the original column? 
-# not label encoding because it is a categorical variable with more than 2 classes, 
-# so we will use one-hot encoding to create dummy variables for each class and drop the original
-#  column to avoid multicollinearity
+# Model evaluation metrics for different thresholds
+
+# results=[]
+
+# def evaluate_model(name, model, X_train, y_train, X_test, y_test, threshold=0.25):
+
+#     model.fit(X_train,y_train)
+
+#     y_prob=model.predict_proba(X_test)[:,1]
+
+#     y_pred=np.where(y_prob>=threshold,1,0)
+
+#     acc=accuracy_score(y_test,y_pred)
+
+#     precision=precision_score(y_test,y_pred)
+
+#     recall=recall_score(y_test,y_pred)
+
+#     f1=f1_score(y_test,y_pred)
+
+#     auc=roc_auc_score(y_test,y_prob)
+
+#     results.append({
+
+#         'Model':name,
+
+#         'Accuracy':round(acc,3),
+
+#         'Precision(Default)':round(precision,3),
+
+#         'Recall(Default)':round(recall,3),
+
+#         'F1(Default)':round(f1,3),
+
+#         'ROC_AUC':round(auc,3)
+
+#     })
+
+#     print("\n"+"="*50)
+
+#     print(name)
+
+#     print("="*50)
+
+#     print("\nConfusion Matrix")
+
+#     print(confusion_matrix(y_test,y_pred))
+
+#     print("\nClassification Report")
+
+#     print(classification_report(
+
+#         y_test,
+
+#         y_pred,
+
+#         target_names=['Safe','Default']
+
+#     ))
+
+
+
+# xgb_model = XGBClassifier(
+
+#     random_state=42,
+
+#     n_estimators=200,
+
+#     max_depth=5,
+
+#     learning_rate=0.05,
+
+#     subsample=0.8,
+
+#     colsample_bytree=0.8,
+
+#     gamma=1,
+
+#     scale_pos_weight=1,
+
+#     eval_metric='logloss'
+# )
+
+# evaluate_model(
+
+#     'XGBoost',
+
+#     xgb_model,
+
+#     X_train_balanced,
+
+#     y_train_balanced,
+
+#     X_test,
+
+#     y_test,
+
+#     threshold=0.25
+# )
+
+# rf_model=RandomForestClassifier(
+
+#     n_estimators=300,
+
+#     max_depth=10,
+
+#     min_samples_split=10,
+
+#     min_samples_leaf=5,
+
+#     class_weight='balanced',
+
+#     random_state=42,
+
+#     n_jobs=-1
+
+# )
+
+# evaluate_model(
+
+#     'Random Forest',
+
+#     rf_model,
+
+#     X_train_balanced,
+
+#     y_train_balanced,
+
+#     X_test,
+
+#     y_test,
+
+#     threshold=0.25
+
+# )
+
+# cat_model=CatBoostClassifier(
+
+#     iterations=300,
+
+#     depth=5,
+
+#     learning_rate=0.05,
+
+#     loss_function='Logloss',
+
+#     eval_metric='AUC',
+
+#     random_seed=42,
+
+#     verbose=False
+
+# )
+
+# evaluate_model(
+
+#     'CatBoost',
+
+#     cat_model,
+
+#     X_train_balanced,
+
+#     y_train_balanced,
+
+#     X_test,
+
+#     y_test,
+
+#     threshold=0.25
+
+# )
+
+# comparison=pd.DataFrame(results)
+
+# comparison=comparison.sort_values(
+
+#     by='ROC_AUC',
+
+#     ascending=False
+
+# )
+
+# print("\nModel Comparison")
+
+# print(comparison)
+
+
+# from sklearn.metrics import roc_curve
+
+# plt.figure(figsize=(8,6))
+
+# for name,model in [
+
+#     ('XGBoost',xgb_model),
+
+#     ('Random Forest',rf_model),
+
+#     ('CatBoost',cat_model)
+
+# ]:
+
+#     y_prob=model.predict_proba(X_test)[:,1]
+
+#     fpr,tpr,_=roc_curve(y_test,y_prob)
+
+#     auc=roc_auc_score(y_test,y_prob)
+
+#     plt.plot(
+
+#         fpr,
+
+#         tpr,
+
+#         label=f'{name} AUC={auc:.3f}'
+
+#     )
+
+
+# plt.plot(
+
+#     [0,1],
+
+#     [0,1],
+
+#     linestyle='--'
+
+# )
+
+# plt.xlabel("False Positive Rate")
+
+# plt.ylabel("True Positive Rate")
+
+# plt.title("ROC Curve Comparison")
+
+# plt.legend()
+
+# plt.show()
