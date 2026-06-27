@@ -1,3 +1,4 @@
+Loan defaulter model :- https://www.linkedin.com/pulse/machine-learning-loan-default-prediction-model-ravichandran-yzeyc/
 ML_Flow setup :- 
 
 Guide :- https://community-charts.github.io/docs/charts/mlflow/usage
