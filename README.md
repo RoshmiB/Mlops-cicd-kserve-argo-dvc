@@ -123,7 +123,7 @@ helm install mlflow community-charts/mlflow \
   --set backendStore.postgres.host=database-1.c1kk8ec46sxh.us-west-2.rds.amazonaws.com \
   --set backendStore.postgres.database=mlflow \
   --set backendStore.postgres.user=postgres \
-  --set backendStore.postgres.password='Spring#43' \
+  --set backendStore.postgres.password='<pass>' \
   --set artifactRoot.s3.enabled=true \
   --set artifactRoot.s3.bucket=mlflow-725490567891 \
   --set serviceAccount.create=false \
