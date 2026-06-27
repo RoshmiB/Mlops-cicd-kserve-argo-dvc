@@ -11,6 +11,12 @@ Doc:- https://www.mlflow.org/docs/latest/ml/model-registry/
 
 ![alt text](image-2.png)
 
+CREATE DATABASE mlflow;
+CREATE USER mlflow_user WITH PASSWORD 'mlflow_password';
+GRANT ALL PRIVILEGES ON DATABASe mlflow TO mlflow_user;
+
+![alt text](image-6.png)
+
 3. connect via dBeaver client and create a mlflow database
 
 nc -zv database-1.c1kk8ec46sxh.us-west-2.rds.amazonaws.com 5432                                                       
@@ -33,6 +39,8 @@ Connection to database-1.c1kk8ec46sxh.us-west-2.rds.amazonaws.com port 5432 [tcp
 i) aws eks describe-cluster --name test-cluster2 --query "cluster.identity.oidc.issuer" --output text
 
 https://oidc.eks.us-west-2.amazonaws.com/id/9C88E7A274ED7FFD2219F53CB558F1B6
+
+https://oidc.eks.us-west-2.amazonaws.com/id/4265CAC088096602CC31ABA3FA495605
 
 ii) Create the trust policy JSON
 
@@ -115,7 +123,7 @@ helm install mlflow community-charts/mlflow \
   --set backendStore.postgres.host=database-1.c1kk8ec46sxh.us-west-2.rds.amazonaws.com \
   --set backendStore.postgres.database=mlflow \
   --set backendStore.postgres.user=postgres \
-  --set backendStore.postgres.password=<pass> \
+  --set backendStore.postgres.password='Spring#43' \
   --set artifactRoot.s3.enabled=true \
   --set artifactRoot.s3.bucket=mlflow-725490567891 \
   --set serviceAccount.create=false \
@@ -246,7 +254,11 @@ Init Containers:
 --experiment loan-defaulter-prediction \
 --run xgb-v1
 
+10. In Mlfow dashboard :-
 
+![alt text](image-8.png)
+
+![alt text](image-9.png)
 
 
 Other way to install mlfow :-
@@ -283,4 +295,92 @@ Then:
 helm upgrade mlflow community-charts/mlflow \
   -n mlflow \
   -f values.yaml
+
+Troubleshooting steps for different issues :-
+
+1. kubectl get validatingwebhookconfigurations
+NAME                              WEBHOOKS   AGE
+vpc-resource-validating-webhook   2          48m
+2. kubectl get mutatingwebhookconfigurations
+NAME                            WEBHOOKS   AGE
+pod-identity-webhook            1          48m
+vpc-resource-mutating-webhook   1          48m
+3. kubectl apply -f k8s/serviceaccount.yaml --v=9
+4. kubectl apply --validate=false -f k8s/serviceaccount.yaml
+5. helm install mlflow community-charts/mlflow \
+  --namespace mlflow \
+  --set backendStore.databaseMigration=true \
+  --set backendStore.postgres.enabled=true \
+  --set backendStore.postgres.host=database-1.c1kk8ec46sxh.us-west-2.rds.amazonaws.com \
+  --set backendStore.postgres.database=mlflow \
+  --set backendStore.postgres.user=mlflow_user \
+  --set backendStore.postgres.password='mlflow_password' \
+  --set artifactRoot.s3.enabled=true \
+  --set artifactRoot.s3.bucket=mlflow-725490567891 \
+  --set serviceAccount.create=false \
+  --set serviceAccount.name=sa-s3-rds-access \
+  --set extraEnvVars.AWS_DEFAULT_REGION=us-west-2
+
+(  --disable-openapi-validation \
+)
+
+helm upgrade mlflow community-charts/mlflow \
+   --namespace mlflow \
+   --reuse-values \
+   --set service.type=LoadBalancer
+
+helm upgrade mlflow community-charts/mlflow \
+   --namespace mlflow \
+   --reuse-values \
+   --set extraEnvVars.MLFLOW_HTTP_ALLOWED_HOSTS="*"
+
+helm upgrade mlflow community-charts/mlflow \
+  --namespace mlflow \
+  --reuse-values \
+  --set extraArgs.gunicorn-opts="--allow-dns-rebinding-attacks"
+
+helm upgrade mlflow community-charts/mlflow \
+  --namespace mlflow \
+  --reuse-values \
+  --set extraArgs.gunicorn-opts=null
+
+6. helm list -n mlflow -a
+7. helm plugin install https://github.com/jkroepke/helm-secrets --verify=false
+8. ls ~/Library/helm/plugins
+9. helm get values mlflow -n mlflow
+10. kubectl exec -it deploy/mlflow -n mlflow -- env | grep MLFLOW
+11. kubectl logs mlflow-6565b84ccc-7n6mq -n mlflow --previous
+12. kubectl get deployment mlflow -n mlflow -o jsonpath='{.spec.template.spec.containers[0].args}'
+13. kubectl get deployment mlflow -n mlflow -o yaml | grep -A20 args:
+14. helm status mlflow -n mlflow
+15. kubectl get endpoints mlflow -n mlflow
+16. k cluster-info 
+Kubernetes control plane is running at https://4265CAC088096602CC31ABA3FA495605.yl4.us-west-2.eks.amazonaws.com
+CoreDNS is running at https://4265CAC088096602CC31ABA3FA495605.yl4.us-west-2.eks.amazonaws.com/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+17. time kubectl get --raw='/readyz?verbose'
+readyz check passed
+18. traceroute $(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' | sed -E 's~https?://~~; s/:.*//')
+19. dig +short $(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}' | sed -E 's~https?://~~; s/:.*//')
+
+
+aws eks create-access-entry --cluster-name test-cluster2 --principal-arn arn:aws:iam::725490567891:root --region us-west-2
+
+aws eks associate-access-policy --cluster-name test-cluster2 --principal-arn arn:aws:iam::725490567891:root --policy-arn arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy --access-scope type=cluster --region us-west-2
+
+Locally setup MlFlow:-
+1. python3 -m pip install mlflow
+2. for python 3.14 
+   vi /Users/rajaguru/Documents/interview_prep/Mlops-cicd-kserve-argo-dvc/.venv/lib/python3.14/site-packages/mlflow/assistant/skill_installer.py
+   Navigate to line 11
+   Change this line: from importlib.abc import Traversable
+   to from importlib.resources.abc import Traversable
+3. mlflow ui --backend-store-uri sqlite:///mlflow.db --port 7006
+4. change the mlfow tracking upi in the python script
+5. python train3_mlflow.py \
+--csv data/loans.csv \
+--experiment loan-defaulter-prediction \
+--run xgb-v1
+
+![alt text](image-7.png)
+
 

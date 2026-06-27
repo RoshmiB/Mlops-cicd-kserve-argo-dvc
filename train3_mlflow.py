@@ -93,10 +93,11 @@ def main():
     args = parse_args()
 
     # Set MLflow tracking URI from env or use default
-    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:7004")
+    tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:7006")
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(args.experiment)
-
+    
+    mlflow.sklearn.autolog()
     #1. Load CSV
     if not os.path.exists(args.csv):
         raise SystemExit(f"CSV not found: {args.csv}. Create or copy wine_sample.csv next to this script.")
@@ -170,7 +171,8 @@ def main():
 
         y_prob_default = best_xgb.predict_proba(X_test)[:, 1]
 
-        custom_threshold = 0.5
+        custom_threshold = 0.48
+        mlflow.log_param("custom_threshold", custom_threshold)
         y_pred_adjusted = np.where(y_prob_default > custom_threshold, 1, 0)
 
         roc_auc = roc_auc_score(y_test,y_prob_default)
