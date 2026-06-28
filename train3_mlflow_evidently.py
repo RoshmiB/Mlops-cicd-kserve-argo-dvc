@@ -1,26 +1,22 @@
-from imblearn.pipeline import Pipeline
+import os
 import pandas as pd
 import numpy as np
-import warnings
-from sklearn.metrics import (
-    roc_auc_score,
-    precision_score,
-    recall_score,
-    f1_score,
-    confusion_matrix,
-    roc_curve
-)
-from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, train_test_split
-from xgboost import XGBClassifier
-from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
 import seaborn as sns
-
+from xgboost import XGBClassifier
+from sklearn.model_selection import train_test_split, RandomizedSearchCV, StratifiedKFold
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score, confusion_matrix, roc_curve
 import mlflow
 import mlflow.xgboost
+import warnings
 import argparse
-import os
 
+# === ADD EVIDENTLY IMPORTS HERE ===
+from evidently import Report
+from evidently.presets import DataDriftPreset, DataSummaryPreset
 warnings.filterwarnings('ignore')
+
 
 def parse_args():
     p = argparse.ArgumentParser("Simple MLflow demo (loan defaulter prediction)")
@@ -32,56 +28,32 @@ def parse_args():
     p.add_argument("--random-state", type=int, default=42, help="Random seed (default: 42)")
     return p.parse_args()
 
-
 def preprocess(df):
-
-    #**********************************************
     # Data loading and pre-processing
-    #**********************************************
-
     df.drop(['id', 'member_id','delinq_2yrs','pub_rec','grade','last_pymnt_amnt', 'installment'], axis=1, inplace=True)
-
-    # drop the rows with null values in  revol_util columns
     df.dropna(subset=['revol_util'], inplace=True)
-
-    # for 'emp_length', we will replace '< 1 year' with 0 and '10+ years' with 10, and then convert the column to integer
-    # 'emp_length' (remove the 'years' string and convert to integer) 
 
     df['emp_length'] = df['emp_length'].replace({'< 1 year': '0', '10+ years': '10'})
     df['emp_length'] = df['emp_length'].astype(str).str.replace(' years', '', regex=False)
     df['emp_length'] = pd.to_numeric(df['emp_length'], errors='coerce')
 
-    # impute the median value of the 'emp_length' column and fill the null values with the median value
     median_emp_length = df['emp_length'].median()
     df['emp_length'] = df['emp_length'].fillna(median_emp_length).astype(int)
 
-    # 'term' (remove the 'months' string and convert to integer)
     df['term'] = df['term'].astype(str).str.replace(' months', '', regex=False).astype(int)
-
-    # remove % from 'revol_util', 'int_rate' and convert to float
     df['revol_util'] = df['revol_util'].astype(str).str.rstrip('%').astype(float) / 100.0
     df['int_rate'] = df['int_rate'].astype(str).str.rstrip('%').astype(float) / 100.0
 
-    #**********************************************
-    # EDA (Exploratory Data Analysis)
-    #**********************************************
-
-    # for purpose,home_ownership,verification_status we will do one-hot encoding and drop the original column
+    # EDA 
     df = pd.get_dummies(df, columns=['purpose', 'home_ownership', 'verification_status'], drop_first=True)
 
-    # doing label encoding for 'loan_status' columns
     df['loan_status'] = df['loan_status'].map({
         'Fully Paid':0,
         'Charged Off':1
     })
 
-    # This captures the direct financial burden of the loan principal relative to the borrower's annual salary, highlighting over-borrowed individuals who are highly likely to collapse under the debt.
-    df['loan_to_income_ratio'] = df['loan_amnt'] / df ['annual_inc'] + 1e-6 # add a small value to avoid division by zero
-
-    # This measures existing credit card debt exposure against yearly earnings, identifying stressed borrowers who are already using a large portion of their income just to maintain outstanding debt obligations.
+    df['loan_to_income_ratio'] = df['loan_amnt'] / df['annual_inc'] + 1e-6 
     df['revol_bal_to_income'] = df['revol_bal']/df['annual_inc'] + 1e-6
-
-    # This evaluates a borrower's desperation for new credit relative to their current stable financial capacity, exposing high-risk, credit-hungry behavior that often precedes a loan default.
     df['inq_to_acc_ratio']=df['inq_last_6mths']/(df['open_acc']+1)
 
     df.drop(['sub_grade'],axis=1,inplace=True,errors='ignore')
@@ -92,26 +64,19 @@ def preprocess(df):
 def main():
     args = parse_args()
 
-    # Set MLflow tracking URI from env or use default
     tracking_uri = os.getenv("MLFLOW_TRACKING_URI", "http://localhost:7006")
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(args.experiment)
     
     mlflow.xgboost.autolog()
-    #1. Load CSV
-    if not os.path.exists(args.csv):
-        raise SystemExit(f"CSV not found: {args.csv}. Create or copy wine_sample.csv next to this script.")
-    df = pd.read_csv(args.csv)
-
-    if args.target not in df.columns:
-        raise SystemExit(f"Target column '{args.target}' not found in CSV. Columns: {list(df.columns)}")
     
+    if not os.path.exists(args.csv):
+        raise SystemExit(f"CSV not found: {args.csv}.")
+    
+    df = pd.read_csv(args.csv)
     df = preprocess(df)
 
-    # #**********************************************
-    # 4. MODEL SELECTION
-    #**********************************************
-
+    # MODEL SELECTION
     X = df.drop([args.target],axis=1)
     y = df[args.target]
 
@@ -128,15 +93,12 @@ def main():
         ))
     ])
 
-    #**********************************************
-    # 5. HPP TUNING (HYPERPARAMETER TUNING)
-    #**********************************************
-
+    # HPP TUNING
     param_grid = {
         'xgb__max_depth': [3, 4, 5, 6] ,
         'xgb__gamma': [0, 0.1, 0.3],
         'xgb__learning_rate': [0.01, 0.05, 0.1],
-        'xgb__n_estimators': [100, 200, 300],
+        'xgb__n_estimators': [100,200,300],
         'xgb__subsample': [0.8, 1.0],
         'xgb__colsample_bytree': [0.8, 1.0],
     }
@@ -155,18 +117,13 @@ def main():
             random_state=args.random_state
         )
 
-        # Fit directly on the original clean training sets
         random_search.fit(X_train, y_train)
         best_xgb = random_search.best_estimator_
 
         print(f"Best Parameters Found: {random_search.best_params_}")
-
         mlflow.log_params(random_search.best_params_)
 
-        #**********************************************
-        # 6. MODEL EVALUATION
-        #**********************************************
-
+        # MODEL EVALUATION
         y_prob_default = best_xgb.predict_proba(X_test)[:, 1]
 
         custom_threshold = 0.48
@@ -188,6 +145,7 @@ def main():
         sns.heatmap(cm,annot=True,fmt="d")
         plt.savefig("confusion_matrix.png")
         mlflow.log_artifact("confusion_matrix.png")
+        plt.close() # Clean up memory
 
         fpr,tpr,_ = roc_curve(y_test,y_prob_default)
         plt.figure(figsize=(8,6))
@@ -195,6 +153,54 @@ def main():
         plt.plot([0,1],[0,1],'--')
         plt.savefig("roc_curve.png")
         mlflow.log_artifact("roc_curve.png")
+        plt.close() # Clean up memory
+
+        # ====================================================================
+        # === NEW FULLY COMPATIBLE EVIDENTLY GENERATION & EXTRACTION BLOCK ===
+        # ====================================================================
+        print("\nGenerating Evidently Reports...")
+
+        reference_df = X_train.copy()
+        reference_df[args.target] = y_train
+
+        current_df = X_test.copy()
+        current_df[args.target] = y_test
+
+        # 1. Define the report template
+        drift_report = Report(metrics=[DataDriftPreset(), DataSummaryPreset()])
+
+        # 2. Compute metrics and capture the Evaluation Snapshot
+        report_snapshot = drift_report.run(reference_data=reference_df, current_data=current_df)
+
+        # 3. Save and log the interactive HTML dashboard to MLflow
+        report_html_path = "evidently_data_drift_report.html"
+        report_snapshot.save_html(report_html_path)
+        mlflow.log_artifact(report_html_path)
+
+        # 4. FIX: Use the .dict() method directly on the snapshot result object
+        report_dict = report_snapshot.dict()
+
+        # 5. Extract summary metrics using the standardized v0.7 list-based schema
+        metrics_list = report_dict.get("metrics", [])
+        
+        drift_share = 0.0
+        dataset_drift = False
+
+        # Loop through the list to safely locate the DatasetDriftMetric calculations
+        for metric in metrics_list:
+            if metric.get("metric") == "DatasetDriftMetric":
+                result = metric.get("result", {})
+                drift_share = result.get("share_of_drifted_columns", 0.0)
+                dataset_drift = result.get("dataset_drift", False)
+                break
+
+        # 6. Log quantitative values to the active MLflow dashboard
+        mlflow.log_metric("evidently_drift_share", float(drift_share))
+        mlflow.log_metric("evidently_dataset_drift_detected", 1.0 if dataset_drift else 0.0)
+
+        print(f"Evidently Metrics Extracted! Drift Share: {drift_share:.2f}, Dataset Drift: {dataset_drift}")
+        print("Evidently reports generated and logged successfully to MLflow!")
+        # ====================================================================
 
         mlflow.xgboost.log_model(
             best_xgb.named_steps["xgb"],
@@ -204,4 +210,5 @@ def main():
 
 
 if __name__ == "__main__":
+    # Assuming parse_args() is defined elsewhere in your script file
     main()

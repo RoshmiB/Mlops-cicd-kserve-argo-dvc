@@ -385,5 +385,10 @@ Locally setup MlFlow:-
 ![alt text](image-7.png)
 
 
+Evidently :- 
+1. https://medium.com/end-to-end-projects/implement-end-to-end-project-with-mlflow-evidently-ai-and-grafana-83175ea75c89
+
+2. 
+
 kimchi recovery code :- CNL8Y9GV8C5D27AYU66GSUN1
 url :- https://app.kimchi.dev/overview/you?org=cd24467d-fb70-4b2b-b6c1-3fbe257a2f7b

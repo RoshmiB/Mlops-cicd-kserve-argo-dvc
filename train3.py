@@ -33,6 +33,14 @@ print (df['revol_util'].value_counts())
 print (df['pub_rec'].value_counts())
 print (df['delinq_2yrs'].value_counts())
 
+total_duplicates = df.duplicated().sum()
+print(f"Total duplicate rows: {total_duplicates}")
+
+duplicate_rows = df[df.duplicated()]
+print(duplicate_rows)
+
+df.drop_duplicates()
+
 #**********************************************
 # Data loading and pre-processing
 #**********************************************
